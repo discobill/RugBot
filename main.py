@@ -1,37 +1,27 @@
 import os
 import random
 import sqlite3
-from flask import Flask, session, redirect, url_for, request, render_template_string
+from flask import Flask, session, redirect, request, render_template_string
 import discord
 from discord.ext import commands
-from discord import app_commands
 import threading
 import requests
 
 # --- ENV CONFIG ---
-BOT_TOKEN = os.getenv("DISCORD_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
 FLASK_SECRET = os.getenv("FLASK_SECRET")
 PORT = int(os.getenv("PORT"))
+DEFAULT_COOKIE = os.getenv("DEFAULT_RUGPLAY_COOKIE")
 
-# --- DISCORD BOT SETUP (HYBRID) ---
+# --- DISCORD BOT SETUP ---
 intents = discord.Intents.default()
 intents.guilds = True
 intents.messages = True
-intents.message_content = True
 intents.members = True
-
+intents.message_content = True  # important for hybrid commands
 bot = commands.Bot(command_prefix='/', intents=intents)
-
-@bot.event
-async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands.")
-    except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
-    print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
 
 # --- DATABASE SETUP ---
 def get_db():
@@ -45,22 +35,22 @@ def get_db():
     ''')
     return conn
 
-# --- SLASH COMMAND: /claim ---
-@bot.tree.command(name="claim", description="Claim a Rugplay coin to a username.")
-@app_commands.describe(username="Rugplay username", coin="Coin symbol")
-async def claim(interaction: discord.Interaction, username: str, coin: str):
-    guild_id = str(interaction.guild.id)
+# --- COMMAND: /claim ---
+@bot.hybrid_command(name="claim", description="Claim a Rugplay coin to a username.")
+async def claim(ctx, username: str, coin: str):
+    guild_id = str(ctx.guild.id)
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT cookie FROM rugplay_cookies WHERE guild_id = ?", (guild_id,))
     row = cur.fetchone()
     conn.close()
 
-    if not row:
-        await interaction.response.send_message("No Rugplay cookie registered for this server. Ask the server owner to register.", ephemeral=True)
+    cookie = row[0] if row else DEFAULT_COOKIE
+
+    if not cookie:
+        await ctx.send("❌ No Rugplay cookie available. Please register one using `/register_cookie`.", ephemeral=True)
         return
 
-    cookie = row[0]
     amount = random.randint(5, 500)
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -77,30 +67,25 @@ async def claim(interaction: discord.Interaction, username: str, coin: str):
     response = requests.post("https://rugplay.com/api/transfer", headers=headers, json=body)
 
     if response.status_code == 404 or "Recipient not found" in response.text:
-        await interaction.response.send_message(f"User **{username}** not found on Rugplay.", ephemeral=True)
+        await ctx.send(f"User **{username}** not found on Rugplay.", ephemeral=True)
     elif response.status_code == 200:
-        await interaction.response.send_message(f"✅ Sent **{amount} {coin.upper()}** to **{username}**!")
+        await ctx.send(f"✅ Sent **{amount} {coin.upper()}** to **{username}**!")
     else:
-        await interaction.response.send_message(
-            f"❌ Failed to send coin: `{response.status_code}`\n{response.text}",
-            ephemeral=True
-        )
+        await ctx.send(f"❌ Failed to send coin: `{response.status_code}`\n{response.text}", ephemeral=True)
 
-# --- SLASH COMMAND: /register_cookie ---
-@bot.tree.command(name="register_cookie", description="Register Rugplay session cookie (server owner only)")
-@app_commands.describe(cookie="Your Rugplay session cookie")
-async def register_cookie(interaction: discord.Interaction, cookie: str):
-    if interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("Only the server owner can register the cookie.", ephemeral=True)
+# --- COMMAND: /register_cookie (server owner only) ---
+@bot.hybrid_command(name="register_cookie", description="Register your Rugplay session cookie (server owner only)")
+async def register_cookie(ctx, cookie: str):
+    if ctx.author.id != ctx.guild.owner_id:
+        await ctx.send("Only the server owner can register the cookie.", ephemeral=True)
         return
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("REPLACE INTO rugplay_cookies (guild_id, cookie) VALUES (?, ?)", (str(interaction.guild.id), cookie))
+    cur.execute("REPLACE INTO rugplay_cookies (guild_id, cookie) VALUES (?, ?)", (str(ctx.guild.id), cookie))
     conn.commit()
     conn.close()
-
-    await interaction.response.send_message("✅ Cookie registered successfully!", ephemeral=True)
+    await ctx.send("✅ Cookie registered successfully!", ephemeral=True)
 
 # --- FLASK ADMIN DASHBOARD ---
 app = Flask(__name__)
@@ -122,7 +107,7 @@ DASHBOARD_TEMPLATE = """
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head><body><div class="container mt-5">
   <div class="d-flex justify-content-between">
-    <h2>Rugplay Guilds</h2><a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Logout</a>
+    <h2>Rugplay Guilds</h2><a href="/logout" class="btn btn-outline-danger">Logout</a>
   </div>
   <table class="table table-bordered mt-3">
     <thead><tr><th>Guild ID</th><th>Registered At</th><th>Actions</th></tr></thead><tbody>
@@ -171,8 +156,11 @@ def logout():
     return redirect("/")
 
 # --- RUN BOT + WEB ---
-def run_web(): app.run(host="0.0.0.0", port=PORT)
-def run_bot(): bot.run(BOT_TOKEN)
+def run_web():
+    app.run(host="0.0.0.0", port=PORT)
+
+def run_bot():
+    bot.run(BOT_TOKEN)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web).start()
