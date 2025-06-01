@@ -19,6 +19,7 @@ PORT = int(os.getenv("PORT"))
 intents = discord.Intents.default()
 intents.guilds = True
 intents.messages = True
+intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix='/', intents=intents)
