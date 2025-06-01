@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 ```env
 DISCORD_TOKEN="your_discord_bot_token"
-ADMIN_TOKEN="AD_OMNI_L7Q8MX" or you can set this to literally anything idc
+ADMIN_TOKEN="AD_OMNI_L7Q8MX" # or you can set this to literally anything idc
 BOT_OWNER_ID="your_discord_user_id"  # Used for showing this in the dashboard if needed
 FLASK_SECRET="your_flask_secret_key"
 PORT=8080
