@@ -9,7 +9,7 @@ import threading
 import requests
 
 # --- ENV CONFIG ---
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
 FLASK_SECRET = os.getenv("FLASK_SECRET")
